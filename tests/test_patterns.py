@@ -62,6 +62,11 @@ def test_kind_filter_and_keywords():
     assert kinds(text, kinds=[], regexes=[r"\d{4}-\d{4}"]) == [("custom", "1234-5678")]
 
 
+def test_ocr_spacing_tolerance():
+    assert kinds("성명 홍 길 동", kinds=[], keywords=["홍길동"]) == [("custom", "홍 길 동")]
+    assert kinds("hong @example.com") == [("email", "hong @example.com")]
+
+
 def test_multiple_in_one_line():
     text = "홍길동(900101-1234567) 010-1234-5678 / 02-123-4567"
     assert [k for k, _ in kinds(text)] == ["rrn", "mobile", "phone"]

@@ -1,13 +1,20 @@
 name: Windows exe 빌드
 
+# main 에 반영될 때마다 exe 를 만들고,
+# pdf_masker/__init__.py 의 __version__ 에 해당하는 릴리스(v버전)가 아직 없으면 새로 만든다.
+# 즉 버전 숫자를 올려서 main 에 병합하면 릴리스가 자동으로 생긴다.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-exe-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -26,7 +33,7 @@ jobs:
         run: python -m pytest -q
 
       - name: exe 만들기
-        run: pyinstaller --onefile --windowed --name PDF-Masker app.py
+        run: pyinstaller --onefile --windowed --name PDF-Masker --add-data "pdf_masker/tessdata;pdf_masker/tessdata" app.py
 
       - name: exe 동작 확인
         shell: pwsh
@@ -34,21 +41,37 @@ jobs:
           $p = Start-Process -FilePath dist\PDF-Masker.exe -ArgumentList "--selftest" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "selftest 실패 (exit $($p.ExitCode))" }
 
+      - name: exe 동작 확인 (한글 경로)
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "홍길동"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $env:TEMP = $dir
+          $env:TMP = $dir
+          $p = Start-Process -FilePath dist\PDF-Masker.exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "한글 경로 selftest 실패 (exit $($p.ExitCode))" }
+
       - uses: actions/upload-artifact@v4
         with:
           name: PDF-Masker
           path: dist/PDF-Masker.exe
 
-      - name: 릴리스에 올리기
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: 새 버전이면 릴리스 만들기
+        if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $notes = "PDF-Masker.exe 를 내려받아 더블클릭하면 실행됩니다. 파이썬 설치가 필요 없습니다."
-          gh release view $env:GITHUB_REF_NAME *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:GITHUB_REF_NAME dist/PDF-Masker.exe --clobber
+          $version = python -c "import pdf_masker; print(pdf_masker.__version__)"
+          $tag = "v$version"
+          $assets = gh release view $tag --json assets --jq ".assets[].name" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "$tag 릴리스를 새로 만듭니다."
+            gh release create $tag dist/PDF-Masker.exe --target $env:GITHUB_SHA --latest --title "PDF 개인정보 마스킹 $tag" --notes "PDF-Masker.exe 를 내려받아 더블클릭하면 실행됩니다. 파이썬 설치가 필요 없습니다." --generate-notes
+          } elseif ($assets -notcontains "PDF-Masker.exe") {
+            Write-Host "$tag 릴리스에 exe 가 없어 올립니다."
+            gh release upload $tag dist/PDF-Masker.exe
           } else {
-            gh release create $env:GITHUB_REF_NAME dist/PDF-Masker.exe --title "PDF 개인정보 마스킹 $env:GITHUB_REF_NAME" --notes $notes
+            Write-Host "$tag 릴리스가 이미 있습니다. 새 릴리스를 만들려면 __version__ 을 올리세요."
           }
+          if ($LASTEXITCODE -ne 0) { throw "릴리스 처리 실패" }

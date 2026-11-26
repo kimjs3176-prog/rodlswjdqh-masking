@@ -7,13 +7,16 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable
 
 import pymupdf as fitz
 
+from . import ocr
 from .patterns import KINDS, CUSTOM_KIND, CUSTOM_LABEL, find_pii
+
+MAX_OCR_PASSES = 3
 
 
 @dataclass
@@ -24,6 +27,7 @@ class MaskOptions:
     partial: bool = False                    # True: 일부만 가림 (예: 주민번호 뒷자리)
     color: tuple[float, float, float] = (0, 0, 0)
     clear_metadata: bool = True              # 작성자 등 문서 속성 삭제
+    ocr: bool = True                         # 스캔(이미지) 쪽을 글자 인식으로 처리
 
 
 @dataclass
@@ -39,7 +43,9 @@ class MaskResult:
     output: Path | None
     pages: int = 0
     findings: list[Finding] = field(default_factory=list)
-    image_only_pages: list[int] = field(default_factory=list)  # 글자가 없는(스캔) 쪽
+    image_only_pages: list[int] = field(default_factory=list)  # 글자가 없는데 OCR 도 못 한 쪽
+    ocr_pages: list[int] = field(default_factory=list)         # OCR 로 처리한 쪽
+    ocr_error: str = ""
     remaining: int = 0                       # 저장 후 재검사에서 남은 건수
 
     @property
@@ -51,10 +57,17 @@ class MaskResult:
         for kind, n in self.counts.items():
             label = KINDS.get(kind, CUSTOM_LABEL if kind == CUSTOM_KIND else kind)
             lines.append(f"  - {label}: {n}건")
+        if self.ocr_pages:
+            pages = ", ".join(map(str, self.ocr_pages))
+            lines.append(
+                f"  * 글자 인식(OCR)으로 처리한 쪽: {pages}쪽 — 인식 오류로 빠질 수 있으니 직접 확인 필요"
+            )
+        if self.ocr_error:
+            lines.append(f"  ! 글자 인식(OCR) 실패: {self.ocr_error}")
         if self.image_only_pages:
             pages = ", ".join(map(str, self.image_only_pages))
             lines.append(
-                f"  ! 글자 정보가 없는 쪽(스캔 이미지로 추정): {pages}쪽 — 자동 탐지 불가, 직접 확인 필요"
+                f"  ! 글자 정보가 없는 쪽(스캔 이미지로 추정): {pages}쪽 — 탐지되지 않음, 직접 확인 필요"
             )
         if self.remaining:
             lines.append(f"  ! 재검사에서 {self.remaining}건이 남아 있습니다. 결과 파일을 확인하세요.")
@@ -66,9 +79,9 @@ def _preview(text: str) -> str:
     return text[:2] + "*" * max(len(text) - 2, 0)
 
 
-def _page_lines(page: fitz.Page):
+def _page_lines(page: fitz.Page, textpage: fitz.TextPage | None = None):
     """쪽의 각 줄을 (문자열, 글자별 사각형 목록) 으로 돌려준다."""
-    raw = page.get_text("rawdict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+    raw = page.get_text("rawdict", flags=fitz.TEXT_PRESERVE_WHITESPACE, textpage=textpage)
     for block in raw.get("blocks", []):
         for line in block.get("lines", []):
             chars, boxes = [], []
@@ -80,10 +93,10 @@ def _page_lines(page: fitz.Page):
                 yield "".join(chars), boxes
 
 
-def _scan_page(page: fitz.Page, opts: MaskOptions):
-    """(Match, 가릴 사각형) 목록."""
+def _hits(page: fitz.Page, opts: MaskOptions, textpage: fitz.TextPage | None = None):
+    """(Match, 가릴 사각형) 목록. textpage 가 있으면 OCR 결과에서 찾는다."""
     hits = []
-    for text, boxes in _page_lines(page):
+    for text, boxes in _page_lines(page, textpage):
         for m in find_pii(text, opts.kinds, opts.keywords, opts.regexes):
             s, e = (m.mask_start, m.mask_end) if opts.partial else (m.start, m.end)
             rect = fitz.Rect()
@@ -92,25 +105,53 @@ def _scan_page(page: fitz.Page, opts: MaskOptions):
                     rect |= box
             if rect.is_empty:
                 continue
-            # 옆 글자가 함께 지워지지 않도록 좌우를 살짝 줄인다
-            if rect.width > 1:
+            if textpage is not None:
+                # OCR 의 글자 위치는 대략적이므로 조금 넉넉하게 가린다
+                rect += (-1, -1.5, 1, 1.5)
+            elif rect.width > 1:
+                # 옆 글자가 함께 지워지지 않도록 좌우를 살짝 줄인다
                 rect.x0 += 0.3
                 rect.x1 -= 0.3
             hits.append((m, rect))
     return hits
 
 
-def scan_pdf(path: str | Path, opts: MaskOptions | None = None) -> MaskResult:
+def _scan_page(page: fitz.Page, opts: MaskOptions, result: MaskResult):
+    """쪽에서 가릴 곳을 찾는다. 스캔 쪽은 OCR 로 찾고 result 에 기록한다."""
+    number = page.number + 1
+    hits = _hits(page, opts)
+    has_text = bool(page.get_text().strip())
+
+    if opts.ocr and not result.ocr_error and ocr.needs_ocr(page):
+        try:
+            textpage = ocr.ocr_textpage(page)
+        except Exception as exc:  # OCR 을 못 써도 나머지 처리는 계속
+            result.ocr_error = str(exc) or type(exc).__name__
+        else:
+            result.ocr_pages.append(number)
+            for m, rect in _hits(page, opts, textpage):
+                if not any(rect.intersects(r) for _, r in hits):
+                    hits.append((m, rect))
+            has_text = True
+
+    if not has_text and page.get_image_info():
+        result.image_only_pages.append(number)
+    return hits
+
+
+def scan_pdf(
+    path: str | Path, opts: MaskOptions | None = None, password: str | None = None
+) -> MaskResult:
     """파일을 바꾸지 않고 탐지만 한다."""
     opts = opts or MaskOptions()
     path = Path(path)
     result = MaskResult(source=path, output=None)
     with fitz.open(path) as doc:
+        if doc.needs_pass and not doc.authenticate(password or ""):
+            raise PermissionError("암호가 걸린 PDF 입니다. 올바른 암호가 필요합니다.")
         result.pages = doc.page_count
         for page in doc:
-            if not page.get_text().strip():
-                result.image_only_pages.append(page.number + 1)
-            for m, _ in _scan_page(page, opts):
+            for m, _ in _scan_page(page, opts, result):
                 result.findings.append(Finding(page.number + 1, m.kind, _preview(m.text)))
     return result
 
@@ -133,17 +174,32 @@ def mask_pdf(
         if doc.needs_pass and not doc.authenticate(password or ""):
             raise PermissionError("암호가 걸린 PDF 입니다. 올바른 암호가 필요합니다.")
         result.pages = doc.page_count
+        done: dict[int, list[fitz.Rect]] = {}
 
         for page in doc:
-            if not page.get_text().strip():
-                result.image_only_pages.append(page.number + 1)
-            hits = _scan_page(page, opts)
-            for m, rect in hits:
-                page.add_redact_annot(rect, fill=opts.color)
-                result.findings.append(Finding(page.number + 1, m.kind, _preview(m.text)))
-            if hits:
-                # 글자는 삭제, 겹치는 이미지는 해당 부분만 지움
+            done[page.number] = rects = []
+            is_ocr = clean = False
+            # 스캔 쪽은 가린 뒤 다시 인식해서, 처음에 놓친 것이 보이면 또 가린다
+            for attempt in range(MAX_OCR_PASSES):
+                scratch = result if attempt == 0 else MaskResult(source=src, output=None)
+                hits = [h for h in _scan_page(page, opts, scratch) if not _covered(h[1], rects)]
+                is_ocr = page.number + 1 in result.ocr_pages
+                if not hits:
+                    clean = True
+                    break
+                for m, rect in hits:
+                    page.add_redact_annot(rect, fill=opts.color)
+                    rects.append(rect)
+                    result.findings.append(Finding(page.number + 1, m.kind, _preview(m.text)))
+                # 글자는 삭제, 겹치는 이미지는 해당 부분의 픽셀을 지움
                 page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+                if not is_ocr:
+                    break  # 글자 정보가 있는 쪽은 저장 후 재검사로 확인
+            if is_ocr and not clean:
+                scratch = MaskResult(source=src, output=None)
+                result.remaining += sum(
+                    not _covered(rect, rects) for _, rect in _scan_page(page, opts, scratch)
+                )
 
         if opts.clear_metadata:
             doc.set_metadata({})
@@ -155,9 +211,26 @@ def mask_pdf(
     finally:
         doc.close()
 
-    # 저장된 결과를 다시 열어 남은 개인정보가 없는지 확인
-    result.remaining = len(scan_pdf(dst, opts).findings)
+    # 저장된 결과를 다시 열어 남은 개인정보가 없는지 확인 (스캔 쪽은 위에서 이미 확인)
+    result.remaining += _count_remaining(dst, replace(opts, ocr=False), done)
     return result
+
+
+def _covered(rect: fitz.Rect, done: list[fitz.Rect]) -> bool:
+    """이미 가린 자리인지. OCR 이 검은 상자를 글자로 잘못 읽는 경우를 걸러 낸다."""
+    area = abs(rect)
+    return area <= 0 or max((abs(rect & r) for r in done), default=0) / area >= 0.5
+
+
+def _count_remaining(path: Path, opts: MaskOptions, done: dict[int, list[fitz.Rect]]) -> int:
+    """결과 파일에 아직 남아 있는 개인정보 건수 (이미 가린 자리는 제외)."""
+    scratch = MaskResult(source=path, output=None)
+    with fitz.open(path) as doc:
+        return sum(
+            not _covered(rect, done.get(page.number, []))
+            for page in doc
+            for _, rect in _scan_page(page, opts, scratch)
+        )
 
 
 def default_output_path(src: str | Path, out_dir: str | Path | None = None) -> Path:

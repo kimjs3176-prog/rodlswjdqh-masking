@@ -37,7 +37,7 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         rf"(?<!\d)\(?0(?:2|[3-6]\d|70)\)?\s?(?:{HY}|\.|\s)\s?(?P<m>\d{{3,4}})\s?(?:{HY}|\.)\s?\d{{4}}(?!\d)"
     ),
     "email": re.compile(
-        r"(?P<m>[A-Za-z0-9._%+\-]+)@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}"
+        r"(?P<m>[A-Za-z0-9._%+\-]+)\s?@\s?[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}"
     ),
     "card": re.compile(
         rf"(?<!\d)\d{{4}}(?:{HY}|\s)(?P<m>\d{{4}}(?:{HY}|\s)\d{{4}})(?:{HY}|\s)\d{{4}}(?!\d)"
@@ -106,7 +106,9 @@ def find_pii(
         kw = kw.strip()
         if not kw:
             continue
-        for m in re.finditer(re.escape(kw), text, re.IGNORECASE):
+        # 글자 사이 공백은 무시 (OCR 결과는 "홍 길 동" 처럼 띄어질 수 있음)
+        pattern = r"\s*".join(re.escape(ch) for ch in kw if not ch.isspace())
+        for m in re.finditer(pattern, text, re.IGNORECASE):
             add(CUSTOM_KIND, m.start(), m.end(), m.start(), m.end())
     for rx in regexes:
         if not rx.strip():

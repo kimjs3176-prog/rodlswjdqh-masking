@@ -10,6 +10,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .masker import MaskOptions, default_output_path, mask_pdf, scan_pdf
+from . import __version__
 from .patterns import KINDS
 
 
@@ -22,7 +23,7 @@ class App(ttk.Frame):
         self.busy = False
         self.last_out_dir: Path | None = None
 
-        master.title("PDF 개인정보 마스킹")
+        master.title(f"PDF 개인정보 마스킹 v{__version__}")
         master.minsize(680, 640)
         self.pack(fill="both", expand=True)
         self._build()
@@ -72,14 +73,18 @@ class App(ttk.Frame):
         ttk.Checkbutton(box, text="문서 속성(작성자 등) 삭제", variable=self.clear_meta).grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(4, 0)
         )
+        self.ocr = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            box, text="스캔(이미지) 문서는 글자 인식(OCR)으로 처리 — 쪽당 몇 초 걸립니다", variable=self.ocr
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         out = ttk.Frame(box)
-        out.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        out.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         ttk.Label(out, text="저장 폴더").pack(side="left")
         self.out_dir = tk.StringVar()
         ttk.Entry(out, textvariable=self.out_dir).pack(side="left", fill="x", expand=True, padx=6)
         ttk.Button(out, text="찾기", command=self.pick_out_dir).pack(side="left")
         ttk.Label(box, text="비워 두면 원본과 같은 폴더에 '파일명_마스킹.pdf' 로 저장됩니다. 원본은 바뀌지 않습니다.").grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(4, 0)
+            row=4, column=0, columnspan=2, sticky="w", pady=(4, 0)
         )
         box.columnconfigure(1, weight=1)
 
@@ -151,6 +156,7 @@ class App(ttk.Frame):
             keywords=[w.strip() for w in self.keywords.get().split(",") if w.strip()],
             partial=self.partial.get(),
             clear_metadata=self.clear_meta.get(),
+            ocr=self.ocr.get(),
         )
 
     def start(self, dry: bool) -> None:

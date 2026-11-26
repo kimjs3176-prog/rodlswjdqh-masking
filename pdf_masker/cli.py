@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-r", "--regex", action="append", default=[], help="추가로 가릴 정규식 (여러 번 지정 가능)")
     ap.add_argument("--partial", action="store_true", help="부분 마스킹 (예: 주민번호 뒷자리만)")
     ap.add_argument("--keep-metadata", action="store_true", help="문서 속성(작성자 등)을 지우지 않음")
+    ap.add_argument("--no-ocr", action="store_true", help="스캔(이미지) 쪽의 글자 인식(OCR)을 하지 않음")
     ap.add_argument("--password", help="암호가 걸린 PDF 의 암호")
     ap.add_argument("--dry-run", action="store_true", help="파일을 만들지 않고 탐지 결과만 출력")
     return ap
@@ -60,13 +61,14 @@ def main(argv: list[str] | None = None) -> int:
         regexes=args.regex,
         partial=args.partial,
         clear_metadata=not args.keep_metadata,
+        ocr=not args.no_ocr,
     )
 
     failed = 0
     for src in _collect(args.inputs):
         try:
             if args.dry_run:
-                result = scan_pdf(src, opts)
+                result = scan_pdf(src, opts, args.password)
                 print(result.summary().replace("마스킹", "탐지", 1))
                 for f in result.findings:
                     print(f"    {f.page}쪽 [{f.kind}] {f.preview}")
