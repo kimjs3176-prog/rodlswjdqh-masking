@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+build/
+dist/
+*.spec
+# 개인정보가 담긴 문서가 실수로 올라가지 않도록
+*.pdf
