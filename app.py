@@ -4,7 +4,7 @@ import sys
 
 
 def selftest() -> int:
-    """빌드 검증용: 글자 PDF 와 스캔(그림) PDF 를 만들어 마스킹이 되는지 확인한다."""
+    """빌드 검증용: 글자 PDF, 스캔(그림) PDF, 엑셀을 만들어 마스킹이 되는지 확인한다."""
     import tempfile
     from pathlib import Path
 
@@ -35,6 +35,18 @@ def selftest() -> int:
         r2 = mask_pdf(scan_pdf, tmp / "scan_out.pdf")
         if r2.ocr_error or r2.ocr_pages != [1] or len(r2.findings) != 2 or r2.remaining:
             return 2
+
+        import openpyxl
+
+        from pdf_masker.masker import mask_file
+
+        wb = openpyxl.Workbook()
+        wb.active.append(["900101-1234567", 1012345678])
+        wb.save(tmp / "book.xlsx")
+        r3 = mask_file(tmp / "book.xlsx", tmp / "book_out.xlsx")
+        row = [c.value for c in openpyxl.load_workbook(tmp / "book_out.xlsx").active[1]]
+        if r3.remaining or row != ["******-*******", "***********"]:
+            return 3
     return 0
 
 

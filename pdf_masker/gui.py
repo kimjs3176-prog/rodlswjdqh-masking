@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .masker import MaskOptions, default_output_path, mask_pdf, scan_pdf
+from .masker import MaskOptions, default_output_path, is_supported, mask_file, scan_file
 from . import __version__
 from .patterns import KINDS
 
@@ -23,7 +23,7 @@ class App(ttk.Frame):
         self.busy = False
         self.last_out_dir: Path | None = None
 
-        master.title(f"PDF 개인정보 마스킹 v{__version__}")
+        master.title(f"PDF·엑셀 개인정보 마스킹 v{__version__}")
         master.minsize(680, 640)
         self.pack(fill="both", expand=True)
         self._build()
@@ -32,7 +32,7 @@ class App(ttk.Frame):
     # ---------- 화면 ----------
     def _build(self) -> None:
         # 1. 파일
-        box = ttk.LabelFrame(self, text="1. PDF 파일", padding=8)
+        box = ttk.LabelFrame(self, text="1. 파일 (PDF, 엑셀 .xlsx)", padding=8)
         box.pack(fill="both", expand=True)
         self.listbox = tk.Listbox(box, height=6, selectmode="extended")
         self.listbox.pack(side="left", fill="both", expand=True)
@@ -83,7 +83,7 @@ class App(ttk.Frame):
         self.out_dir = tk.StringVar()
         ttk.Entry(out, textvariable=self.out_dir).pack(side="left", fill="x", expand=True, padx=6)
         ttk.Button(out, text="찾기", command=self.pick_out_dir).pack(side="left")
-        ttk.Label(box, text="비워 두면 원본과 같은 폴더에 '파일명_마스킹.pdf' 로 저장됩니다. 원본은 바뀌지 않습니다.").grid(
+        ttk.Label(box, text="비워 두면 원본과 같은 폴더에 '파일명_마스킹' 으로 저장됩니다. 원본은 바뀌지 않습니다.").grid(
             row=4, column=0, columnspan=2, sticky="w", pady=(4, 0)
         )
         box.columnconfigure(1, weight=1)
@@ -112,17 +112,20 @@ class App(ttk.Frame):
     # ---------- 파일 목록 ----------
     def _add(self, paths) -> None:
         for p in map(Path, paths):
-            if p.suffix.lower() == ".pdf" and p not in self.files:
+            if is_supported(p) and p not in self.files:
                 self.files.append(p)
                 self.listbox.insert("end", str(p))
 
     def add_files(self) -> None:
-        self._add(filedialog.askopenfilenames(title="PDF 선택", filetypes=[("PDF", "*.pdf")]))
+        self._add(filedialog.askopenfilenames(
+                title="파일 선택",
+                filetypes=[("PDF·엑셀", "*.pdf *.xlsx *.xlsm"), ("PDF", "*.pdf"), ("엑셀", "*.xlsx *.xlsm")],
+            ))
 
     def add_folder(self) -> None:
         folder = filedialog.askdirectory(title="폴더 선택")
         if folder:
-            self._add(sorted(f for f in Path(folder).rglob("*.pdf") if "_마스킹" not in f.stem))
+            self._add(sorted(f for f in Path(folder).rglob("*") if is_supported(f) and "_마스킹" not in f.stem))
 
     def remove_selected(self) -> None:
         for i in reversed(self.listbox.curselection()):
@@ -163,7 +166,7 @@ class App(ttk.Frame):
         if self.busy:
             return
         if not self.files:
-            messagebox.showinfo("안내", "먼저 PDF 파일을 추가하세요.")
+            messagebox.showinfo("안내", "먼저 PDF 또는 엑셀 파일을 추가하세요.")
             return
         opts = self.options()
         if not list(opts.kinds) and not opts.keywords:
@@ -184,10 +187,10 @@ class App(ttk.Frame):
         for src in files:
             try:
                 if dry:
-                    result = scan_pdf(src, opts)
+                    result = scan_file(src, opts)
                     self.msgs.put(("log", result.summary().replace("마스킹", "탐지", 1)))
                 else:
-                    result = mask_pdf(src, default_output_path(src, out_dir), opts)
+                    result = mask_file(src, default_output_path(src, out_dir), opts)
                     self.msgs.put(("log", result.summary() + f"\n  → {result.output}"))
                     self.msgs.put(("out", result.output.parent))
                 total += len(result.findings)

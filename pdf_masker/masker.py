@@ -17,6 +17,7 @@ from . import ocr
 from .patterns import KINDS, CUSTOM_KIND, CUSTOM_LABEL, find_pii
 
 MAX_OCR_PASSES = 3
+SUPPORTED = (".pdf", ".xlsx", ".xlsm")
 
 
 @dataclass
@@ -35,6 +36,7 @@ class Finding:
     page: int        # 1부터 시작
     kind: str
     preview: str     # 로그용 (일부 가린 값)
+    where: str = ""  # 엑셀: 시트!셀
 
 
 @dataclass
@@ -46,6 +48,8 @@ class MaskResult:
     image_only_pages: list[int] = field(default_factory=list)  # 글자가 없는데 OCR 도 못 한 쪽
     ocr_pages: list[int] = field(default_factory=list)         # OCR 로 처리한 쪽
     ocr_error: str = ""
+    unit: str = "쪽"                          # 엑셀은 "개 시트"
+    notes: list[str] = field(default_factory=list)             # 사용자에게 알릴 사항
     remaining: int = 0                       # 저장 후 재검사에서 남은 건수
 
     @property
@@ -53,7 +57,7 @@ class MaskResult:
         return Counter(f.kind for f in self.findings)
 
     def summary(self) -> str:
-        lines = [f"{self.source.name}: {self.pages}쪽, 총 {len(self.findings)}건 마스킹"]
+        lines = [f"{self.source.name}: {self.pages}{self.unit}, 총 {len(self.findings)}건 마스킹"]
         for kind, n in self.counts.items():
             label = KINDS.get(kind, CUSTOM_LABEL if kind == CUSTOM_KIND else kind)
             lines.append(f"  - {label}: {n}건")
@@ -62,6 +66,8 @@ class MaskResult:
             lines.append(
                 f"  * 글자 인식(OCR)으로 처리한 쪽: {pages}쪽 — 인식 오류로 빠질 수 있으니 직접 확인 필요"
             )
+        for note in self.notes:
+            lines.append(f"  ! {note}")
         if self.ocr_error:
             lines.append(f"  ! 글자 인식(OCR) 실패: {self.ocr_error}")
         if self.image_only_pages:
@@ -231,6 +237,40 @@ def _count_remaining(path: Path, opts: MaskOptions, done: dict[int, list[fitz.Re
             for page in doc
             for _, rect in _scan_page(page, opts, scratch)
         )
+
+
+def is_supported(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in SUPPORTED
+
+
+def mask_file(src, dst, opts: MaskOptions | None = None, password: str | None = None) -> MaskResult:
+    """파일 종류(PDF·엑셀)에 맞는 방법으로 마스킹한다."""
+    suffix = Path(src).suffix.lower()
+    if suffix == ".pdf":
+        return mask_pdf(src, dst, opts, password)
+    if suffix in SUPPORTED:
+        from .excel import mask_xlsx
+
+        return mask_xlsx(src, dst, opts)
+    raise ValueError(_unsupported(suffix))
+
+
+def scan_file(src, opts: MaskOptions | None = None, password: str | None = None) -> MaskResult:
+    """파일을 바꾸지 않고 탐지만 한다."""
+    suffix = Path(src).suffix.lower()
+    if suffix == ".pdf":
+        return scan_pdf(src, opts, password)
+    if suffix in SUPPORTED:
+        from .excel import scan_xlsx
+
+        return scan_xlsx(src, opts)
+    raise ValueError(_unsupported(suffix))
+
+
+def _unsupported(suffix: str) -> str:
+    if suffix == ".xls":
+        return "옛 엑셀 형식(.xls)은 지원하지 않습니다. 엑셀에서 .xlsx 로 다시 저장한 뒤 시도하세요."
+    return f"지원하지 않는 파일 형식입니다: {suffix or '(확장자 없음)'}"
 
 
 def default_output_path(src: str | Path, out_dir: str | Path | None = None) -> Path:

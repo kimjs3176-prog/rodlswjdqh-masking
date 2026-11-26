@@ -151,3 +151,17 @@ def find_pii(
 
     found.sort(key=lambda f: f.start)
     return found
+
+
+_KEEP = set("-‐‑–—−@./() \t\r\n")
+
+
+def mask_text(text: str, matches: Iterable[Match], partial: bool = False, char: str = "*") -> str:
+    """글자 자체를 바꿔 가린다 (엑셀 등). 구분 기호는 남겨 형식을 알아볼 수 있게 한다."""
+    out = list(text)
+    for m in matches:
+        s, e = (m.mask_start, m.mask_end) if partial else (m.start, m.end)
+        for i in range(s, e):
+            if out[i] not in _KEEP:
+                out[i] = char
+    return "".join(out)
