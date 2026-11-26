@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .masker import MaskOptions, default_output_path, mask_pdf, scan_pdf
+from .masker import MaskOptions, default_output_path, is_supported, mask_file, scan_file
 from .patterns import KINDS
 
 
@@ -14,7 +14,7 @@ def _collect(paths: list[str]) -> list[Path]:
     files: list[Path] = []
     for p in map(Path, paths):
         if p.is_dir():
-            files += sorted(f for f in p.rglob("*.pdf") if "_마스킹" not in f.stem)
+            files += sorted(f for f in p.rglob("*") if is_supported(f) and "_마스킹" not in f.stem)
         else:
             files.append(p)
     return files
@@ -24,10 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     kinds_help = ", ".join(f"{k}({v})" for k, v in KINDS.items())
     ap = argparse.ArgumentParser(
         prog="pdf_masker",
-        description="PDF 개인정보 마스킹 (로컬 처리). 인자 없이 실행하면 창(GUI)이 열립니다.",
+        description="PDF·엑셀 개인정보 마스킹 (로컬 처리). 인자 없이 실행하면 창(GUI)이 열립니다.",
     )
-    ap.add_argument("inputs", nargs="*", help="PDF 파일 또는 폴더")
-    ap.add_argument("-o", "--out-dir", help="저장 폴더 (기본: 원본과 같은 폴더, 파일명_마스킹.pdf)")
+    ap.add_argument("inputs", nargs="*", help="PDF·엑셀(.xlsx, .xlsm) 파일 또는 폴더")
+    ap.add_argument("-o", "--out-dir", help="저장 폴더 (기본: 원본과 같은 폴더, 파일명_마스킹.확장자)")
     ap.add_argument("-k", "--kinds", help=f"탐지할 종류를 쉼표로 구분 (기본: 전체). {kinds_help}")
     ap.add_argument("-w", "--keyword", action="append", default=[], help="추가로 가릴 단어 (여러 번 지정 가능)")
     ap.add_argument("-r", "--regex", action="append", default=[], help="추가로 가릴 정규식 (여러 번 지정 가능)")
@@ -68,12 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     for src in _collect(args.inputs):
         try:
             if args.dry_run:
-                result = scan_pdf(src, opts, args.password)
+                result = scan_file(src, opts, args.password)
                 print(result.summary().replace("마스킹", "탐지", 1))
                 for f in result.findings:
-                    print(f"    {f.page}쪽 [{f.kind}] {f.preview}")
+                    print(f"    {f.where or str(f.page) + '쪽'} [{f.kind}] {f.preview}")
             else:
-                result = mask_pdf(src, default_output_path(src, args.out_dir), opts, args.password)
+                result = mask_file(src, default_output_path(src, args.out_dir), opts, args.password)
                 print(result.summary())
                 print(f"  → {result.output}")
                 if result.remaining:
