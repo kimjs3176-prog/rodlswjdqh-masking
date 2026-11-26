@@ -80,6 +80,6 @@ pip install -r requirements.txt pytest
 python -m pytest
 ```
 
-exe 는 `v1.0.0` 같은 태그를 푸시하면 GitHub Actions 가 자동으로 만들어 Releases 에 올립니다.
+exe 는 `v1.0.0` 같은 태그로 릴리스를 만들면(또는 태그를 푸시하면) GitHub Actions 가 자동으로 빌드해 해당 릴리스에 올립니다.
 
 PDF 처리는 [PyMuPDF](https://pymupdf.readthedocs.io/)(AGPL-3.0)를 사용합니다.
