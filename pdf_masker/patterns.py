@@ -28,7 +28,7 @@ CUSTOM_LABEL = "사용자 지정"
 
 _PATTERNS: dict[str, re.Pattern[str]] = {
     "rrn": re.compile(
-        rf"(?<!\d)(?P<a>\d{{6}})\s?{HY}?\s?(?P<m>[1-8]\d{{6}})(?!\d)"
+        rf"(?<!\d)(?<!\d{HY})(?P<a>\d{{6}})\s?{HY}?\s?(?P<m>[1-8]\d{{6}})(?!\d)(?!{HY}\d)"
     ),
     "mobile": re.compile(
         rf"(?<!\d)01[016789][\s.]?{HY}?[\s.]?(?P<m>\d{{3,4}})[\s.]?{HY}?[\s.]?\d{{4}}(?!\d)"
@@ -37,7 +37,7 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         rf"(?<!\d)\(?0(?:2|[3-6]\d|70)\)?\s?(?:{HY}|\.|\s)\s?(?P<m>\d{{3,4}})\s?(?:{HY}|\.)\s?\d{{4}}(?!\d)"
     ),
     "email": re.compile(
-        r"(?P<m>[A-Za-z0-9._%+\-]+)@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}"
+        r"(?P<m>[A-Za-z0-9._%+\-]+)\s?@\s?[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}"
     ),
     "card": re.compile(
         rf"(?<!\d)\d{{4}}(?:{HY}|\s)(?P<m>\d{{4}}(?:{HY}|\s)\d{{4}})(?:{HY}|\s)\d{{4}}(?!\d)"
@@ -52,6 +52,28 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         rf"(?<![\d\-])(?P<m>\d{{2,6}}{HY}\d{{2,6}}{HY}\d{{2,8}}(?:{HY}\d{{1,3}})?)(?![\d\-])"
     ),
 }
+
+# ---- 개인정보가 아닌 번호 (가리지 않음) ----
+# 산업재산권 번호: 권리 구분 2자리(10 특허, 20 실용신안, 30 디자인, 40~ 상표)로 시작
+_IP = r"(?:10|20|30|4\d|50)"
+_NOT_PII = [
+    # 출원·공개·공고번호: 10-2023-0012345, 1020230012345
+    re.compile(rf"(?<![\d\-]){_IP}\s?{HY}?\s?(?:19|20)\d{{2}}\s?{HY}?\s?\d{{7}}(?![\d\-])"),
+    # 등록번호: 10-1234567, 10-1234567-0000
+    re.compile(rf"(?<![\d\-]){_IP}{HY}\d{{7}}(?:{HY}\d{{4}})?(?![\d\-])"),
+    # "출원번호 ..." 처럼 이름표가 붙은 번호는 형식과 관계없이 제외
+    re.compile(
+        r"(?:출원\s?번호|공개\s?번호|공고\s?번호|특허\s?번호|특허\s?등록\s?번호|등록\s?특허"
+        r"|실용신안\s?등록|디자인\s?등록|상표\s?등록|국제\s?출원|우선권\s?주장"
+        r"|(?:Application|Patent|Publication|Registration)\s?(?:No|Number))"
+        rf"[\s.:：()\[\]제第호번]{{0,6}}(?:PCT/)?[A-Z]{{0,3}}\d+(?:\s?(?:{HY}|/)\s?\d+)*",
+        re.IGNORECASE,
+    ),
+]
+
+
+def _not_pii_spans(text: str) -> list[tuple[int, int]]:
+    return [m.span() for rx in _NOT_PII for m in rx.finditer(text)]
 
 
 @dataclass(frozen=True)
@@ -106,7 +128,9 @@ def find_pii(
         kw = kw.strip()
         if not kw:
             continue
-        for m in re.finditer(re.escape(kw), text, re.IGNORECASE):
+        # 글자 사이 공백은 무시 (OCR 결과는 "홍 길 동" 처럼 띄어질 수 있음)
+        pattern = r"\s*".join(re.escape(ch) for ch in kw if not ch.isspace())
+        for m in re.finditer(pattern, text, re.IGNORECASE):
             add(CUSTOM_KIND, m.start(), m.end(), m.start(), m.end())
     for rx in regexes:
         if not rx.strip():
@@ -114,10 +138,14 @@ def find_pii(
         for m in re.finditer(rx, text):
             add(CUSTOM_KIND, m.start(), m.end(), m.start(), m.end())
 
+    excluded = _not_pii_spans(text)
     for kind in enabled:
         validator = _VALIDATORS.get(kind)
         for m in _PATTERNS[kind].finditer(text):
             if validator and not validator(m):
+                continue
+            # 특허 출원번호 등은 주민등록번호·계좌번호와 모양이 비슷해도 가리지 않는다
+            if kind != "email" and any(m.start() < e and s < m.end() for s, e in excluded):
                 continue
             add(kind, m.start(), m.end(), m.start("m"), m.end("m"))
 
