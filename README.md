@@ -27,10 +27,19 @@ PDF 문서에서 개인정보를 자동으로 찾아 가려 주는 **로컬 프�
 
 ## 사용 방법 (Windows)
 
+### exe 로 실행 (파이썬 설치 불필요)
+
+1. [Releases](https://github.com/kimjs3176-prog/rodlswjdqh-masking/releases/latest) 에서 `PDF-Masker.exe` 를 내려받습니다.
+2. 더블클릭합니다. 설치 과정이 없고 인터넷 없이 동작합니다.
+3. 창에서 PDF 추가 → 가릴 항목 선택 → **마스킹 실행**.
+
+처음 실행할 때 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행** 을 누르세요(서명되지 않은 프로그램이라 뜨는 안내입니다).
+첫 화면이 뜨기까지 몇 초 걸릴 수 있습니다.
+
+### 파이썬으로 실행
+
 1. [파이썬](https://www.python.org/downloads/)을 설치합니다. 설치 화면에서 **Add python.exe to PATH** 를 체크하세요.
-2. 이 저장소를 내려받아(Code → Download ZIP) 압축을 풉니다.
-3. `실행.bat` 을 더블클릭합니다. 처음 한 번만 구성 요소를 설치하며(인터넷 필요), 이후에는 인터넷 없이 동작합니다.
-4. 창에서 PDF 추가 → 가릴 항목 선택 → **마스킹 실행**.
+2. 이 저장소를 내려받아(Code → Download ZIP) 압축을 풀고 `실행.bat` 을 더블클릭합니다.
 
 ## 명령줄 사용
 
@@ -70,5 +79,7 @@ pip install -r requirements.txt pytest
 ```bash
 python -m pytest
 ```
+
+exe 는 `v1.0.0` 같은 태그를 푸시하면 GitHub Actions 가 자동으로 만들어 Releases 에 올립니다.
 
 PDF 처리는 [PyMuPDF](https://pymupdf.readthedocs.io/)(AGPL-3.0)를 사용합니다.
