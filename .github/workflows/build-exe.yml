@@ -33,7 +33,7 @@ jobs:
         run: python -m pytest -q
 
       - name: exe 만들기
-        run: pyinstaller --onefile --windowed --name PDF-Masker --add-data "pdf_masker/tessdata;pdf_masker/tessdata" app.py
+        run: pyinstaller --onefile --windowed --name PDF-Masker --add-data "pdf_masker/tessdata;pdf_masker/tessdata" --collect-all tkinterdnd2 app.py
 
       - name: exe 동작 확인
         shell: pwsh

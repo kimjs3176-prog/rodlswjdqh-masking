@@ -47,6 +47,16 @@ def selftest() -> int:
         row = [c.value for c in openpyxl.load_workbook(tmp / "book_out.xlsx").active[1]]
         if r3.remaining or row != ["******-*******", "***********"]:
             return 3
+
+    # 끌어다 놓기 구성 요소가 exe 에 제대로 들어갔는지 확인
+    from pdf_masker.gui import App, make_root
+
+    root = make_root()
+    root.withdraw()
+    ok = App(root).dnd
+    root.destroy()
+    if not ok:
+        return 4
     return 0
 
 
