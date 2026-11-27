@@ -17,7 +17,7 @@ from . import ocr
 from .patterns import KINDS, CUSTOM_KIND, CUSTOM_LABEL, find_pii
 
 MAX_OCR_PASSES = 3
-SUPPORTED = (".pdf", ".xlsx", ".xlsm")
+SUPPORTED = (".pdf", ".xlsx", ".xlsm", ".hwpx")
 
 
 @dataclass
@@ -244,10 +244,14 @@ def is_supported(path: str | Path) -> bool:
 
 
 def mask_file(src, dst, opts: MaskOptions | None = None, password: str | None = None) -> MaskResult:
-    """파일 종류(PDF·엑셀)에 맞는 방법으로 마스킹한다."""
+    """파일 종류(PDF·엑셀·한글)에 맞는 방법으로 마스킹한다."""
     suffix = Path(src).suffix.lower()
     if suffix == ".pdf":
         return mask_pdf(src, dst, opts, password)
+    if suffix == ".hwpx":
+        from .hwpx import mask_hwpx
+
+        return mask_hwpx(src, dst, opts)
     if suffix in SUPPORTED:
         from .excel import mask_xlsx
 
@@ -260,6 +264,10 @@ def scan_file(src, opts: MaskOptions | None = None, password: str | None = None)
     suffix = Path(src).suffix.lower()
     if suffix == ".pdf":
         return scan_pdf(src, opts, password)
+    if suffix == ".hwpx":
+        from .hwpx import scan_hwpx
+
+        return scan_hwpx(src, opts)
     if suffix in SUPPORTED:
         from .excel import scan_xlsx
 
@@ -270,6 +278,8 @@ def scan_file(src, opts: MaskOptions | None = None, password: str | None = None)
 def _unsupported(suffix: str) -> str:
     if suffix == ".xls":
         return "옛 엑셀 형식(.xls)은 지원하지 않습니다. 엑셀에서 .xlsx 로 다시 저장한 뒤 시도하세요."
+    if suffix == ".hwp":
+        return "옛 한글 형식(.hwp)은 지원하지 않습니다. 한글에서 '다른 이름으로 저장' → hwpx 로 저장한 뒤 시도하세요."
     return f"지원하지 않는 파일 형식입니다: {suffix or '(확장자 없음)'}"
 
 

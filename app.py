@@ -48,6 +48,17 @@ def selftest() -> int:
         if r3.remaining or row != ["******-*******", "***********"]:
             return 3
 
+        import zipfile
+
+        section = '<hs:sec xmlns:hp="p"><hp:p><hp:run><hp:t>ID 900101-</hp:t></hp:run><hp:run><hp:t>1234567</hp:t></hp:run></hp:p></hs:sec>'
+        with zipfile.ZipFile(tmp / "doc.hwpx", "w") as z:
+            z.writestr("mimetype", "application/hwp+zip")
+            z.writestr("Contents/section0.xml", section)
+        r4 = mask_file(tmp / "doc.hwpx", tmp / "doc_out.hwpx")
+        body = zipfile.ZipFile(tmp / "doc_out.hwpx").read("Contents/section0.xml").decode("utf-8")
+        if r4.remaining or len(r4.findings) != 1 or "1234567" in body or "<hp:t>*******</hp:t>" not in body:
+            return 5
+
     # 끌어다 놓기 구성 요소가 exe 에 제대로 들어갔는지 확인
     from pdf_masker.gui import App, make_root
 

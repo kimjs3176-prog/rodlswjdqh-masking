@@ -23,7 +23,7 @@ class App(ttk.Frame):
         self.busy = False
         self.last_out_dir: Path | None = None
 
-        master.title(f"PDF·엑셀 개인정보 마스킹 v{__version__}")
+        master.title(f"PDF·엑셀·한글 개인정보 마스킹 v{__version__}")
         master.minsize(680, 640)
         self.pack(fill="both", expand=True)
         self.dnd = self._enable_drop()
@@ -33,7 +33,7 @@ class App(ttk.Frame):
     # ---------- 화면 ----------
     def _build(self) -> None:
         # 1. 파일
-        title = "1. 파일 (PDF, 엑셀 .xlsx)"
+        title = "1. 파일 (PDF, 엑셀 .xlsx, 한글 .hwpx)"
         if self.dnd:
             title += " — 파일이나 폴더를 이 창에 끌어다 놓아도 됩니다"
         box = ttk.LabelFrame(self, text=title, padding=8)
@@ -142,7 +142,7 @@ class App(ttk.Frame):
                 skipped += 1
         added = len(self.files) - before
         if skipped:
-            self._write(f"{added}개 추가, 지원하지 않는 형식 {skipped}개는 제외했습니다 (PDF, .xlsx, .xlsm 만 가능).")
+            self._write(f"{added}개 추가, 지원하지 않는 형식 {skipped}개는 제외했습니다 (PDF, .xlsx, .xlsm, .hwpx 만 가능. 옛 한글 .hwp 는 hwpx 로 다시 저장하세요).")
 
     def _add(self, paths) -> None:
         for p in map(Path, paths):
@@ -153,7 +153,12 @@ class App(ttk.Frame):
     def add_files(self) -> None:
         self._add(filedialog.askopenfilenames(
                 title="파일 선택",
-                filetypes=[("PDF·엑셀", "*.pdf *.xlsx *.xlsm"), ("PDF", "*.pdf"), ("엑셀", "*.xlsx *.xlsm")],
+                filetypes=[
+                    ("PDF·엑셀·한글", "*.pdf *.xlsx *.xlsm *.hwpx"),
+                    ("PDF", "*.pdf"),
+                    ("엑셀", "*.xlsx *.xlsm"),
+                    ("한글", "*.hwpx"),
+                ],
             ))
 
     def add_folder(self) -> None:
@@ -200,7 +205,7 @@ class App(ttk.Frame):
         if self.busy:
             return
         if not self.files:
-            messagebox.showinfo("안내", "먼저 PDF 또는 엑셀 파일을 추가하세요.")
+            messagebox.showinfo("안내", "먼저 PDF, 엑셀 또는 한글(hwpx) 파일을 추가하세요.")
             return
         opts = self.options()
         if not list(opts.kinds) and not opts.keywords:

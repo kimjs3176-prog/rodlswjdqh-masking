@@ -24,9 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     kinds_help = ", ".join(f"{k}({v})" for k, v in KINDS.items())
     ap = argparse.ArgumentParser(
         prog="pdf_masker",
-        description="PDF·엑셀 개인정보 마스킹 (로컬 처리). 인자 없이 실행하면 창(GUI)이 열립니다.",
+        description="PDF·엑셀·한글 개인정보 마스킹 (로컬 처리). 인자 없이 실행하면 창(GUI)이 열립니다.",
     )
-    ap.add_argument("inputs", nargs="*", help="PDF·엑셀(.xlsx, .xlsm) 파일 또는 폴더")
+    ap.add_argument("inputs", nargs="*", help="PDF·엑셀(.xlsx, .xlsm)·한글(.hwpx) 파일 또는 폴더")
     ap.add_argument("-o", "--out-dir", help="저장 폴더 (기본: 원본과 같은 폴더, 파일명_마스킹.확장자)")
     ap.add_argument("-k", "--kinds", help=f"탐지할 종류를 쉼표로 구분 (기본: 전체). {kinds_help}")
     ap.add_argument("-w", "--keyword", action="append", default=[], help="추가로 가릴 단어 (여러 번 지정 가능)")
