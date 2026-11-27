@@ -4,4 +4,4 @@ from .patterns import KINDS, Match, find_pii
 from .masker import MaskOptions, MaskResult, mask_file, mask_pdf, scan_file
 
 __all__ = ["KINDS", "Match", "find_pii", "MaskOptions", "MaskResult", "mask_file", "mask_pdf", "scan_file"]
-__version__ = "1.2.0"
+__version__ = "1.3.0"

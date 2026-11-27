@@ -17,7 +17,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 rem 새 버전에서 추가된 구성 요소가 있으면 설치
-".venv\Scripts\python.exe" -c "import pymupdf, openpyxl" >nul 2>nul
+".venv\Scripts\python.exe" -c "import pymupdf, openpyxl, tkinterdnd2" >nul 2>nul
 if errorlevel 1 (
     echo 추가 구성 요소를 설치합니다...
     ".venv\Scripts\python.exe" -m pip install --quiet -r requirements.txt || goto :fail

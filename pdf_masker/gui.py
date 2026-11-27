@@ -26,13 +26,17 @@ class App(ttk.Frame):
         master.title(f"PDF·엑셀 개인정보 마스킹 v{__version__}")
         master.minsize(680, 640)
         self.pack(fill="both", expand=True)
+        self.dnd = self._enable_drop()
         self._build()
         self.after(100, self._drain)
 
     # ---------- 화면 ----------
     def _build(self) -> None:
         # 1. 파일
-        box = ttk.LabelFrame(self, text="1. 파일 (PDF, 엑셀 .xlsx)", padding=8)
+        title = "1. 파일 (PDF, 엑셀 .xlsx)"
+        if self.dnd:
+            title += " — 파일이나 폴더를 이 창에 끌어다 놓아도 됩니다"
+        box = ttk.LabelFrame(self, text=title, padding=8)
         box.pack(fill="both", expand=True)
         self.listbox = tk.Listbox(box, height=6, selectmode="extended")
         self.listbox.pack(side="left", fill="both", expand=True)
@@ -110,6 +114,36 @@ class App(ttk.Frame):
         scroll.pack(side="left", fill="y")
 
     # ---------- 파일 목록 ----------
+    def _enable_drop(self) -> bool:
+        """창 어디에든 파일을 끌어다 놓을 수 있게 한다. 지원되지 않는 환경이면 False."""
+        try:
+            from tkinterdnd2 import DND_FILES
+
+            self.master.drop_target_register(DND_FILES)
+            self.master.dnd_bind("<<Drop>>", self.on_drop)
+            return True
+        except Exception:
+            return False
+
+    def on_drop(self, event) -> None:
+        if self.busy:
+            return
+        self.add_paths(self.tk.splitlist(event.data))
+
+    def add_paths(self, paths) -> None:
+        """파일·폴더가 섞인 목록을 추가한다. 폴더는 안의 지원 파일을 모두 넣는다."""
+        before, skipped = len(self.files), 0
+        for p in map(Path, paths):
+            if p.is_dir():
+                self._add(sorted(f for f in p.rglob("*") if is_supported(f) and "_마스킹" not in f.stem))
+            elif is_supported(p):
+                self._add([p])
+            else:
+                skipped += 1
+        added = len(self.files) - before
+        if skipped:
+            self._write(f"{added}개 추가, 지원하지 않는 형식 {skipped}개는 제외했습니다 (PDF, .xlsx, .xlsm 만 가능).")
+
     def _add(self, paths) -> None:
         for p in map(Path, paths):
             if is_supported(p) and p not in self.files:
@@ -125,7 +159,7 @@ class App(ttk.Frame):
     def add_folder(self) -> None:
         folder = filedialog.askdirectory(title="폴더 선택")
         if folder:
-            self._add(sorted(f for f in Path(folder).rglob("*") if is_supported(f) and "_마스킹" not in f.stem))
+            self.add_paths([folder])
 
     def remove_selected(self) -> None:
         for i in reversed(self.listbox.curselection()):
@@ -229,8 +263,18 @@ class App(ttk.Frame):
         self.log.configure(state="disabled")
 
 
+def make_root() -> tk.Tk:
+    """끌어다 놓기를 쓸 수 있으면 그 기능이 들어간 창을, 아니면 기본 창을 만든다."""
+    try:
+        from tkinterdnd2 import TkinterDnD
+
+        return TkinterDnD.Tk()
+    except Exception:
+        return tk.Tk()
+
+
 def run() -> None:
-    root = tk.Tk()
+    root = make_root()
     App(root)
     root.mainloop()
 
